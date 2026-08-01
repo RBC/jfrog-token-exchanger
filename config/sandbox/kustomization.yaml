@@ -10,5 +10,5 @@ configMapGenerator:
   - ./jfrog.env
 
 images:
-- name: ghcr.io/richardmsong/jfrog-token-exchanger
+- name: ghcr.io/rbc/jfrog-token-exchanger
   newTag: pr-8
