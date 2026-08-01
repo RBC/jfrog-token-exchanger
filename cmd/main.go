@@ -39,8 +39,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/richardmsong/jfrog-token-exchanger/internal/clustername"
 	"github.com/richardmsong/jfrog-token-exchanger/internal/controller"
+	"github.com/richardmsong/jfrog-token-exchanger/internal/oidcissuer"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -101,7 +101,7 @@ func main() {
 	if providerName != "" {
 		setupLog.Info("Using explicitly configured provider name", "providerName", providerName)
 	} else {
-		resolver := clustername.NewResolver()
+		resolver := oidcissuer.NewResolver()
 		detectedName, err := resolver.Resolve()
 		if err != nil {
 			setupLog.Error(err, "Failed to auto-detect provider name from service account token")

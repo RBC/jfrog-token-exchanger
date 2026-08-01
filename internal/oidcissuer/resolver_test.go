@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package clustername
+package oidcissuer
 
 import (
 	"encoding/base64"
@@ -26,9 +26,9 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestClusterName(t *testing.T) {
+func TestOIDCIssuer(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "ClusterName Suite")
+	RunSpecs(t, "OIDCIssuer Suite")
 }
 
 // Helper function to create a mock JWT token with specified audiences and issuer
