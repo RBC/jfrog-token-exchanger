@@ -25,12 +25,15 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	clientgofake "k8s.io/client-go/kubernetes/fake"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	k8stesting "k8s.io/client-go/testing"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -847,6 +850,40 @@ var _ = Describe("ServiceAccountReconciler", func() {
 // Note: DefaultJFrogClient integration tests are covered by the higher-level
 // ServiceAccountReconciler tests using MockJFrogClient. The actual SDK functionality
 // is tested by the jfrog-client-go library itself.
+
+var _ = Describe("DefaultTokenRequester", func() {
+	It("sets the requested audience to JfrogURL", func() {
+		const jfrogURL = "https://mycompany.jfrog.io"
+
+		clientset := clientgofake.NewSimpleClientset()
+
+		var capturedTokenRequest *authenticationv1.TokenRequest
+		clientset.PrependReactor("create", "serviceaccounts", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			createAction, ok := action.(k8stesting.CreateAction)
+			if !ok || action.GetSubresource() != "token" {
+				return false, nil, nil
+			}
+			capturedTokenRequest = createAction.GetObject().(*authenticationv1.TokenRequest)
+			return true, &authenticationv1.TokenRequest{
+				Status: authenticationv1.TokenRequestStatus{
+					Token: "fake-token",
+				},
+			}, nil
+		})
+
+		requester := &DefaultTokenRequester{
+			Clientset: clientset,
+			JfrogURL:  jfrogURL,
+		}
+
+		token, err := requester.RequestToken(context.Background(), "default", "test-sa", 3600)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(token).To(Equal("fake-token"))
+
+		Expect(capturedTokenRequest).NotTo(BeNil())
+		Expect(capturedTokenRequest.Spec.Audiences).To(Equal([]string{jfrogURL}))
+	})
+})
 
 func boolPtr(b bool) *bool {
 	return &b
