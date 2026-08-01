@@ -85,12 +85,17 @@ type TokenRequester interface {
 // DefaultTokenRequester implements TokenRequester using the Kubernetes API
 type DefaultTokenRequester struct {
 	Clientset kubernetes.Interface
+	// JfrogURL is the audience to request for the ServiceAccount token, so the
+	// token's aud claim matches what the JFrog OIDC provider expects, rather
+	// than relying on the cluster's incidental default audience.
+	JfrogURL string
 }
 
 // RequestToken requests a token for the ServiceAccount using TokenRequest API
 func (r *DefaultTokenRequester) RequestToken(ctx context.Context, namespace, name string, expirationSeconds int64) (string, error) {
 	tokenRequest := &authenticationv1.TokenRequest{
 		Spec: authenticationv1.TokenRequestSpec{
+			Audiences:         []string{r.JfrogURL},
 			ExpirationSeconds: &expirationSeconds,
 		},
 	}

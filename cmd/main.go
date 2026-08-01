@@ -200,6 +200,7 @@ func main() {
 		Scheme: mgr.GetScheme(),
 		TokenRequester: &controller.DefaultTokenRequester{
 			Clientset: clientset,
+			JfrogURL:  jfrogURL,
 		},
 		JFrogClient:   jfrogClient,
 		JFrogRegistry: jfrogRegistry,

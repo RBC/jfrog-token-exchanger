@@ -47,6 +47,12 @@ The controller requires the following environment variables or configuration:
 
 \* Either `JTE_PROVIDER_NAME` or `JTE_CLUSTER_NAME_RESOLUTION_MODE` must be set.
 
+#### Token Audience
+
+Exchanged ServiceAccount tokens carry `aud` == `JTE_JFROG_URL` (the full Artifactory URL, e.g. `https://mycompany.jfrog.io`). This is set explicitly on every `TokenRequest`, so it's consistent across clusters and cloud providers, rather than depending on whatever audience a given cluster happens to default to.
+
+**Migration note for existing deployments:** previously, the `aud` claim came from the cluster's default audience, which varies by provider (e.g. AKS clusters get several default audiences, EKS clusters get exactly one: `https://kubernetes.default.svc`). If your JFrog OIDC Identity Provider's "Audience" field is currently configured to match one of those cluster defaults, you must update it to your Artifactory URL (the value of `JTE_JFROG_URL`) before upgrading, or token exchange will start failing.
+
 #### Azure Kubernetes Service (AKS) Support
 
 When running in Azure Kubernetes Service (AKS), the controller can automatically detect your cluster name from the Kubernetes service account token, eliminating the need to manually configure the provider name.
