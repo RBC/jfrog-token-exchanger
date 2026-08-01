@@ -17,5 +17,5 @@ jobs:
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
-    uses: richardmsong/shared-workflows/.github/workflows/claude.yml@main
+    uses: richardmsong/shared-workflows/.github/workflows/claude.yml@7e4d37d1bab79696038882e240642177f34379ca # ratchet:richardmsong/shared-workflows/.github/workflows/claude.yml@main
     secrets: inherit
