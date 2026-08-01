@@ -111,6 +111,12 @@ func main() {
 	case clusterNameResolutionMode != "":
 		// No explicit PROVIDER_NAME - auto-detect cluster name
 		setupLog.Info("Cluster name resolution mode enabled", "mode", clusterNameResolutionMode)
+		if clusterNameResolutionMode == clustername.ResolutionModeAzure {
+			setupLog.Info("CLUSTER_NAME_RESOLUTION_MODE=azure is deprecated and will be removed in a future release; " +
+				"migrate to oidc-issuer, which works identically on AKS, EKS, and any other OIDC-compliant cluster. " +
+				"Note: this changes the resolved provider name, so the JFrog OIDC Identity Provider entry must be " +
+				"re-registered under the new issuer-derived value before or during the cutover.")
+		}
 
 		resolver := clustername.NewResolver()
 		detectedName, err := resolver.ResolveClusterName(clusterNameResolutionMode)

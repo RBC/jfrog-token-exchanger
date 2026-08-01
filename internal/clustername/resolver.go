@@ -25,8 +25,15 @@ import (
 )
 
 const (
-	// ResolutionModeAzure is the cluster name resolution mode for Azure Kubernetes Service
+	// ResolutionModeAzure is the cluster name resolution mode for Azure Kubernetes Service.
+	// Deprecated: use ResolutionModeOIDCIssuer instead, which works identically on any
+	// OIDC-compliant cluster (AKS, EKS, etc.) with no cloud-specific parsing.
 	ResolutionModeAzure = "azure"
+	// ResolutionModeOIDCIssuer resolves an opaque, provider-agnostic identity from the
+	// `iss` claim of the Kubernetes service account token. Every Kubernetes cluster with
+	// a configured service-account-token issuer stamps that issuer into every SA token,
+	// so this works the same way on any OIDC-compliant cluster.
+	ResolutionModeOIDCIssuer = "oidc-issuer"
 	// ServiceAccountTokenPath is the default path to the Kubernetes service account token
 	ServiceAccountTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token" //nolint:gosec // G101: This is a file path, not a credential
 )
@@ -48,14 +55,65 @@ func NewResolver() *Resolver {
 }
 
 // ResolveClusterName resolves the cluster name based on the resolution mode
-// Supported modes: "azure"
+// Supported modes: "azure" (deprecated), "oidc-issuer"
 func (r *Resolver) ResolveClusterName(mode string) (string, error) {
 	switch mode {
 	case ResolutionModeAzure:
 		return r.resolveAzureClusterName()
+	case ResolutionModeOIDCIssuer:
+		return r.resolveOIDCIssuer()
 	default:
-		return "", fmt.Errorf("unsupported cluster name resolution mode: %s (supported modes: azure)", mode)
+		return "", fmt.Errorf("unsupported cluster name resolution mode: %s (supported modes: azure, oidc-issuer)", mode)
 	}
+}
+
+// resolveOIDCIssuer extracts the OIDC issuer (`iss` claim) from the Kubernetes service
+// account token. Unlike resolveAzureClusterName, this performs no cloud-specific parsing:
+// the issuer URL is used verbatim as the opaque provider identity, since it is the actual
+// trust anchor Artifactory validates the token's signature against in OIDC federation.
+func (r *Resolver) resolveOIDCIssuer() (string, error) {
+	tokenBytes, err := r.readFile(ServiceAccountTokenPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read service account token from %s: %w", ServiceAccountTokenPath, err)
+	}
+
+	token := string(tokenBytes)
+	if token == "" {
+		return "", fmt.Errorf("service account token is empty")
+	}
+
+	issuer, err := extractIssuerFromToken(token)
+	if err != nil {
+		return "", fmt.Errorf("failed to extract issuer from token: %w", err)
+	}
+
+	return issuer, nil
+}
+
+// extractIssuerFromToken decodes a JWT token and extracts the `iss` claim
+func extractIssuerFromToken(token string) (string, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return "", fmt.Errorf("invalid JWT format: expected 3 parts, got %d", len(parts))
+	}
+
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", fmt.Errorf("failed to decode JWT payload: %w", err)
+	}
+
+	var claims struct {
+		Iss string `json:"iss"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return "", fmt.Errorf("failed to parse JWT claims: %w", err)
+	}
+
+	if claims.Iss == "" {
+		return "", fmt.Errorf("iss claim is empty or missing")
+	}
+
+	return claims.Iss, nil
 }
 
 // resolveAzureClusterName extracts the cluster name from the Kubernetes service account token

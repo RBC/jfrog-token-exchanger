@@ -43,13 +43,41 @@ The controller requires the following environment variables or configuration:
 | `JTE_JFROG_URL` | Yes | Base URL of your JFrog instance | `https://mycompany.jfrog.io` |
 | `JTE_JFROG_REGISTRY` | Yes | Registry hostname for docker config | `mycompany.jfrog.io` |
 | `JTE_PROVIDER_NAME` | Conditional* | OIDC provider name configured in JFrog | `my-k8s-cluster` |
-| `JTE_CLUSTER_NAME_RESOLUTION_MODE` | Conditional* | Auto-detect cluster name from environment. Supported modes: `azure` | `azure` |
+| `JTE_CLUSTER_NAME_RESOLUTION_MODE` | Conditional* | Auto-detect the provider identity from the environment. Supported modes: `oidc-issuer` (recommended), `azure` (deprecated) | `oidc-issuer` |
 
 \* Either `JTE_PROVIDER_NAME` or `JTE_CLUSTER_NAME_RESOLUTION_MODE` must be set.
 
-#### Azure Kubernetes Service (AKS) Support
+#### OIDC Issuer-Based Resolution (recommended, works on any cloud)
 
-When running in Azure Kubernetes Service (AKS), the controller can automatically detect your cluster name from the Kubernetes service account token, eliminating the need to manually configure the provider name.
+The controller can automatically derive a provider identity from the Kubernetes service account token's `iss` (issuer) claim, with no cloud-specific logic. Every Kubernetes cluster with a configured service-account-token issuer stamps that issuer into every SA token — this is standard OIDC/Kubernetes behavior, not specific to any one provider. For example:
+
+- AKS: `iss: https://<region>.oic.prod-aks.azure.com/<tenant-id>/<cluster-id>/`
+- EKS: `iss: https://oidc.eks.<region>.amazonaws.com/id/<cluster-id>`
+
+**How it works:**
+- Set `JTE_CLUSTER_NAME_RESOLUTION_MODE=oidc-issuer`
+- The controller reads the service account token from `/var/run/secrets/kubernetes.io/serviceaccount/token`
+- Decodes the JWT and extracts the `iss` claim verbatim
+- Uses the issuer URL as the opaque provider name for JFrog OIDC token exchange — the issuer is the actual trust anchor Artifactory validates the token's signature against, so this is the protocol-correct value to key the provider registry on
+
+**Example deployment (AKS or EKS):**
+```yaml
+env:
+  - name: JTE_JFROG_URL
+    value: "https://mycompany.jfrog.io"
+  - name: JTE_JFROG_REGISTRY
+    value: "mycompany.jfrog.io"
+  - name: JTE_CLUSTER_NAME_RESOLUTION_MODE
+    value: "oidc-issuer"
+```
+
+**Important:** The resolved value is an opaque issuer URL, not a friendly cluster name. **You must configure your JFrog Artifactory OIDC provider name to match the issuer URL exactly.** Use Artifactory's OIDC Identity Provider **Description** field to attach a human-readable cluster label — the provider name and the description don't need to match.
+
+#### Azure Kubernetes Service (AKS) legacy mode (deprecated)
+
+> **Deprecated:** `azure` mode is deprecated in favor of `oidc-issuer` above, which works identically on AKS, EKS, and any other OIDC-compliant cluster. `azure` continues to work for now but will be removed in a future major version. Existing deployments should migrate to `oidc-issuer` and re-register their JFrog OIDC Identity Provider under the new issuer-derived value, since the resolved provider name changes.
+
+Prior to `oidc-issuer`, the controller could automatically detect an AKS cluster's friendly name from its default token audience.
 
 **How it works:**
 - Set `JTE_CLUSTER_NAME_RESOLUTION_MODE=azure`
@@ -58,7 +86,7 @@ When running in Azure Kubernetes Service (AKS), the controller can automatically
 - The audience claim format: `https://<cluster-name>-dns-<hash>.hcp.<region>.azmk8s.io`
 - Uses the extracted cluster name as the provider name for JFrog OIDC token exchange
 
-**Example AKS deployment:**
+**Example AKS deployment (legacy):**
 ```yaml
 env:
   - name: JTE_JFROG_URL

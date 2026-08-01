@@ -48,6 +48,23 @@ func createMockToken(audiences interface{}) string {
 	return fmt.Sprintf("%s.%s.%s", header, payload, signature)
 }
 
+// Helper function to create a mock JWT token with specified audiences and issuer
+func createMockTokenWithIssuer(audiences interface{}, issuer string) string {
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","typ":"JWT"}`))
+
+	claims := map[string]interface{}{
+		"aud": audiences,
+		"exp": 1234567890,
+		"iss": issuer,
+	}
+
+	claimsJSON, _ := json.Marshal(claims)
+	payload := base64.RawURLEncoding.EncodeToString(claimsJSON)
+	signature := base64.RawURLEncoding.EncodeToString([]byte("mock-signature"))
+
+	return fmt.Sprintf("%s.%s.%s", header, payload, signature)
+}
+
 var _ = Describe("Resolver", func() {
 	Context("ResolveClusterName", func() {
 		It("should return error for unsupported mode", func() {
@@ -97,6 +114,144 @@ var _ = Describe("Resolver", func() {
 			_, err := resolver.ResolveClusterName("")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("unsupported cluster name resolution mode"))
+		})
+
+		It("should support oidc-issuer mode with token", func() {
+			token := createMockTokenWithIssuer([]interface{}{
+				"https://mycompany.jfrog.io",
+			}, "https://oidc.eks.us-east-1.amazonaws.com/id/ABCDEF1234567890")
+
+			resolver := &Resolver{
+				getEnv: func(key string) string {
+					return ""
+				},
+				readFile: func(path string) ([]byte, error) {
+					if path == ServiceAccountTokenPath {
+						return []byte(token), nil
+					}
+					return nil, fmt.Errorf("file not found")
+				},
+			}
+			name, err := resolver.ResolveClusterName(ResolutionModeOIDCIssuer)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(name).To(Equal("https://oidc.eks.us-east-1.amazonaws.com/id/ABCDEF1234567890"))
+		})
+	})
+
+	Context("resolveOIDCIssuer", func() {
+		It("should extract issuer from service account token (EKS-shaped)", func() {
+			token := createMockTokenWithIssuer(
+				[]interface{}{"https://kubernetes.default.svc"},
+				"https://oidc.eks.eu-west-1.amazonaws.com/id/1234567890ABCDEF",
+			)
+
+			resolver := &Resolver{
+				getEnv: func(key string) string {
+					return ""
+				},
+				readFile: func(path string) ([]byte, error) {
+					if path == ServiceAccountTokenPath {
+						return []byte(token), nil
+					}
+					return nil, fmt.Errorf("file not found")
+				},
+			}
+
+			issuer, err := resolver.resolveOIDCIssuer()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(issuer).To(Equal("https://oidc.eks.eu-west-1.amazonaws.com/id/1234567890ABCDEF"))
+		})
+
+		It("should extract issuer from service account token (AKS-shaped)", func() {
+			token := createMockTokenWithIssuer(
+				[]interface{}{"https://mycompany.jfrog.io"},
+				"https://eastus.oic.prod-aks.azure.com/tenant-id/cluster-id/",
+			)
+
+			resolver := &Resolver{
+				getEnv: func(key string) string {
+					return ""
+				},
+				readFile: func(path string) ([]byte, error) {
+					return []byte(token), nil
+				},
+			}
+
+			issuer, err := resolver.resolveOIDCIssuer()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(issuer).To(Equal("https://eastus.oic.prod-aks.azure.com/tenant-id/cluster-id/"))
+		})
+
+		It("should return error when token file cannot be read", func() {
+			resolver := &Resolver{
+				getEnv: func(key string) string {
+					return ""
+				},
+				readFile: func(path string) ([]byte, error) {
+					return nil, fmt.Errorf("permission denied")
+				},
+			}
+
+			_, err := resolver.resolveOIDCIssuer()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to read service account token"))
+		})
+
+		It("should return error when token is empty", func() {
+			resolver := &Resolver{
+				getEnv: func(key string) string {
+					return ""
+				},
+				readFile: func(path string) ([]byte, error) {
+					return []byte(""), nil
+				},
+			}
+
+			_, err := resolver.resolveOIDCIssuer()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("service account token is empty"))
+		})
+
+		It("should return error when iss claim is missing", func() {
+			token := createMockTokenWithIssuer([]interface{}{"https://kubernetes.default.svc"}, "")
+
+			resolver := &Resolver{
+				getEnv: func(key string) string {
+					return ""
+				},
+				readFile: func(path string) ([]byte, error) {
+					return []byte(token), nil
+				},
+			}
+
+			_, err := resolver.resolveOIDCIssuer()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("iss claim is empty or missing"))
+		})
+	})
+
+	Context("extractIssuerFromToken", func() {
+		It("should return error for invalid JWT format", func() {
+			_, err := extractIssuerFromToken("invalid-token")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid JWT format"))
+		})
+
+		It("should return error for invalid base64 encoding", func() {
+			_, err := extractIssuerFromToken("header.invalid@base64.signature")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to decode JWT payload"))
+		})
+
+		It("should return error for invalid JSON in payload", func() {
+			header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256"}`))
+			payload := base64.RawURLEncoding.EncodeToString([]byte(`{invalid json}`))
+			signature := base64.RawURLEncoding.EncodeToString([]byte("sig"))
+			token := fmt.Sprintf("%s.%s.%s", header, payload, signature)
+
+			_, err := extractIssuerFromToken(token)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to parse JWT claims"))
 		})
 	})
 
