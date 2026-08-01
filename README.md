@@ -53,8 +53,9 @@ If `JTE_PROVIDER_NAME` is not set, the controller automatically derives a provid
 
 **How it works:**
 - The controller reads the service account token from `/var/run/secrets/kubernetes.io/serviceaccount/token`
-- Decodes the JWT and extracts the `iss` claim verbatim
-- Uses the issuer URL as the opaque provider name for JFrog OIDC token exchange — the issuer is the actual trust anchor Artifactory validates the token's signature against, so this is the protocol-correct value to key the provider registry on
+- Decodes the JWT and extracts the `iss` claim
+- The issuer is the actual trust anchor Artifactory validates the token's signature against, but it's an arbitrary URL, not the alphanumeric-safe identifier Artifactory's OIDC provider name field expects — so the controller hashes the issuer (SHA-256, hex-encoded) and uses that digest as the provider name
+- On startup the controller logs both the raw issuer and the derived provider name; use those values verbatim when configuring the matching JFrog OIDC integration (`name` = the digest, `issuer_url` = the raw issuer)
 
 **Example deployment (AKS or EKS) relying on auto-detection:**
 ```yaml
@@ -65,7 +66,7 @@ env:
     value: "mycompany.jfrog.io"
 ```
 
-**Important:** The resolved value is an opaque issuer URL, not a friendly cluster name. **You must configure your JFrog Artifactory OIDC provider name to match the issuer URL exactly.** Use Artifactory's OIDC Identity Provider **Description** field to attach a human-readable cluster label — the provider name and the description don't need to match.
+**Important:** The resolved provider name is a SHA-256 digest, not a friendly cluster name. **You must configure your JFrog Artifactory OIDC provider with a name matching the digest exactly, and an `issuer_url` matching the raw issuer exactly** (both are printed in the controller's startup logs). Use Artifactory's OIDC Identity Provider **Description** field to attach a human-readable cluster label.
 
 ### Running on the cluster
 

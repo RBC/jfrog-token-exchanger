@@ -17,7 +17,9 @@ limitations under the License.
 package oidcissuer
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -25,7 +27,10 @@ import (
 )
 
 const (
-	// ServiceAccountTokenPath is the default path to the Kubernetes service account token
+	// ServiceAccountTokenPath is the default path to the Kubernetes service account token.
+	// Requires automountServiceAccountToken to stay enabled on this controller's own
+	// ServiceAccount/pod: disabling it removes this file, which also breaks the manager's
+	// own in-cluster k8s client bootstrap, not just issuer resolution.
 	ServiceAccountTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token" //nolint:gosec // G101: This is a file path, not a credential
 )
 
@@ -46,28 +51,38 @@ func NewResolver() *Resolver {
 }
 
 // Resolve extracts the OIDC issuer (`iss` claim) from the Kubernetes service account
-// token and returns it verbatim as the opaque provider identity. Every Kubernetes cluster
-// with a configured service-account-token issuer stamps that issuer into every SA token,
-// so this works the same way on any OIDC-compliant cluster (AKS, EKS, etc.) with no
-// cloud-specific parsing. The issuer is also the actual trust anchor Artifactory validates
-// the token's signature against in OIDC federation.
-func (r *Resolver) Resolve() (string, error) {
+// token. The raw issuer is an arbitrary URL, not the alphanumeric-safe identifier
+// Artifactory's OIDC provider name field expects, so Resolve also derives a stable
+// providerName by hashing the canonicalized issuer with SHA-256. It returns the raw
+// issuer alongside providerName so callers can log it: Artifactory must have a matching
+// OIDC integration pre-configured with name=providerName and issuer_url=issuer.
+func (r *Resolver) Resolve() (providerName string, issuer string, err error) {
 	tokenBytes, err := r.readFile(ServiceAccountTokenPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to read service account token from %s: %w", ServiceAccountTokenPath, err)
+		return "", "", fmt.Errorf("failed to read service account token from %s: %w", ServiceAccountTokenPath, err)
 	}
 
 	token := string(tokenBytes)
 	if token == "" {
-		return "", fmt.Errorf("service account token is empty")
+		return "", "", fmt.Errorf("service account token is empty")
 	}
 
-	issuer, err := extractIssuerFromToken(token)
+	issuer, err = extractIssuerFromToken(token)
 	if err != nil {
-		return "", fmt.Errorf("failed to extract issuer from token: %w", err)
+		return "", "", fmt.Errorf("failed to extract issuer from token: %w", err)
 	}
 
-	return issuer, nil
+	return providerNameFromIssuer(issuer), issuer, nil
+}
+
+// providerNameFromIssuer derives a deterministic, alphanumeric provider name from an
+// OIDC issuer URL by hex-encoding the SHA-256 digest of its canonicalized form. The
+// trailing slash is stripped first: some issuers (e.g. AKS) include one and some (e.g.
+// EKS) don't, and both forms identify the same trust anchor.
+func providerNameFromIssuer(issuer string) string {
+	canonical := strings.TrimSuffix(issuer, "/")
+	sum := sha256.Sum256([]byte(canonical))
+	return hex.EncodeToString(sum[:])
 }
 
 // extractIssuerFromToken decodes a JWT token and extracts the `iss` claim

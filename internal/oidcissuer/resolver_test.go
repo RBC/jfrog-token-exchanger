@@ -50,10 +50,11 @@ func createMockTokenWithIssuer(audiences interface{}, issuer string) string {
 
 var _ = Describe("Resolver", func() {
 	Context("Resolve", func() {
-		It("should extract issuer from service account token (EKS-shaped)", func() {
+		It("should derive a deterministic provider name and return the raw issuer (EKS-shaped)", func() {
+			issuer := "https://oidc.eks.eu-west-1.amazonaws.com/id/1234567890ABCDEF"
 			token := createMockTokenWithIssuer(
 				[]interface{}{"https://kubernetes.default.svc"},
-				"https://oidc.eks.eu-west-1.amazonaws.com/id/1234567890ABCDEF",
+				issuer,
 			)
 
 			resolver := &Resolver{
@@ -68,29 +69,40 @@ var _ = Describe("Resolver", func() {
 				},
 			}
 
-			issuer, err := resolver.Resolve()
+			providerName, resolvedIssuer, err := resolver.Resolve()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(issuer).To(Equal("https://oidc.eks.eu-west-1.amazonaws.com/id/1234567890ABCDEF"))
+			Expect(resolvedIssuer).To(Equal(issuer))
+			Expect(providerName).To(Equal(providerNameFromIssuer(issuer)))
+			Expect(providerName).To(MatchRegexp("^[0-9a-f]{64}$"))
 		})
 
-		It("should extract issuer from service account token (AKS-shaped)", func() {
-			token := createMockTokenWithIssuer(
-				[]interface{}{"https://mycompany.jfrog.io"},
-				"https://eastus.oic.prod-aks.azure.com/tenant-id/cluster-id/",
-			)
+		It("should derive the same provider name regardless of a trailing slash (AKS-shaped)", func() {
+			withSlash := "https://eastus.oic.prod-aks.azure.com/tenant-id/cluster-id/"
+			withoutSlash := "https://eastus.oic.prod-aks.azure.com/tenant-id/cluster-id"
 
-			resolver := &Resolver{
+			resolverWithSlash := &Resolver{
 				getEnv: func(key string) string {
 					return ""
 				},
 				readFile: func(path string) ([]byte, error) {
-					return []byte(token), nil
+					return []byte(createMockTokenWithIssuer([]interface{}{"https://mycompany.jfrog.io"}, withSlash)), nil
+				},
+			}
+			resolverWithoutSlash := &Resolver{
+				getEnv: func(key string) string {
+					return ""
+				},
+				readFile: func(path string) ([]byte, error) {
+					return []byte(createMockTokenWithIssuer([]interface{}{"https://mycompany.jfrog.io"}, withoutSlash)), nil
 				},
 			}
 
-			issuer, err := resolver.Resolve()
+			nameWithSlash, _, err := resolverWithSlash.Resolve()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(issuer).To(Equal("https://eastus.oic.prod-aks.azure.com/tenant-id/cluster-id/"))
+			nameWithoutSlash, _, err := resolverWithoutSlash.Resolve()
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(nameWithSlash).To(Equal(nameWithoutSlash))
 		})
 
 		It("should return error when token file cannot be read", func() {
@@ -103,7 +115,7 @@ var _ = Describe("Resolver", func() {
 				},
 			}
 
-			_, err := resolver.Resolve()
+			_, _, err := resolver.Resolve()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to read service account token"))
 		})
@@ -118,7 +130,7 @@ var _ = Describe("Resolver", func() {
 				},
 			}
 
-			_, err := resolver.Resolve()
+			_, _, err := resolver.Resolve()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("service account token is empty"))
 		})
@@ -135,9 +147,26 @@ var _ = Describe("Resolver", func() {
 				},
 			}
 
-			_, err := resolver.Resolve()
+			_, _, err := resolver.Resolve()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("iss claim is empty or missing"))
+		})
+	})
+
+	Context("providerNameFromIssuer", func() {
+		It("should return a 64-character lowercase hex digest", func() {
+			name := providerNameFromIssuer("https://oidc.eks.eu-west-1.amazonaws.com/id/1234567890ABCDEF")
+			Expect(name).To(MatchRegexp("^[0-9a-f]{64}$"))
+		})
+
+		It("should be deterministic", func() {
+			issuer := "https://oidc.eks.eu-west-1.amazonaws.com/id/1234567890ABCDEF"
+			Expect(providerNameFromIssuer(issuer)).To(Equal(providerNameFromIssuer(issuer)))
+		})
+
+		It("should normalize a trailing slash before hashing", func() {
+			Expect(providerNameFromIssuer("https://issuer.example.com/path/")).
+				To(Equal(providerNameFromIssuer("https://issuer.example.com/path")))
 		})
 	})
 

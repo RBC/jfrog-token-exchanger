@@ -102,14 +102,16 @@ func main() {
 		setupLog.Info("Using explicitly configured provider name", "providerName", providerName)
 	} else {
 		resolver := oidcissuer.NewResolver()
-		detectedName, err := resolver.Resolve()
+		detectedName, issuer, err := resolver.Resolve()
 		if err != nil {
 			setupLog.Error(err, "Failed to auto-detect provider name from service account token")
 			os.Exit(1)
 		}
 
 		providerName = detectedName
-		setupLog.Info("Provider name auto-detected", "providerName", providerName)
+		setupLog.Info("Provider name auto-detected from OIDC issuer; configure a matching JFrog OIDC integration with this name and issuer_url",
+			"issuer", issuer,
+			"providerName", providerName)
 	}
 
 	setupLog.Info("JFrog configuration loaded",
