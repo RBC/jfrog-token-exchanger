@@ -54,7 +54,7 @@ If `JTE_PROVIDER_NAME` is not set, the controller automatically derives a provid
 **How it works:**
 - The controller reads the service account token from `/var/run/secrets/kubernetes.io/serviceaccount/token`
 - Decodes the JWT and extracts the `iss` claim
-- The issuer is the actual trust anchor Artifactory validates the token's signature against, but it's an arbitrary URL, not the alphanumeric-safe identifier Artifactory's OIDC provider name field expects — so the controller hashes the issuer (SHA-256, hex-encoded) and uses that digest as the provider name
+- The issuer is the actual trust anchor Artifactory validates the token's signature against, but Artifactory's OIDC provider name field must start with a lowercase letter and contain only lowercase letters, digits and `-` — an arbitrary issuer URL doesn't qualify, and neither does a bare hex digest (it can start with 0-9). So the controller hashes the issuer (SHA-256, hex-encoded) and prefixes it with `iss-` to get the provider name
 - On startup the controller logs both the raw issuer and the derived provider name; use those values verbatim when configuring the matching JFrog OIDC integration (`name` = the digest, `issuer_url` = the raw issuer)
 
 **Example deployment (AKS or EKS) relying on auto-detection:**

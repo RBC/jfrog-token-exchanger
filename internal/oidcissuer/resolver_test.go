@@ -73,7 +73,7 @@ var _ = Describe("Resolver", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resolvedIssuer).To(Equal(issuer))
 			Expect(providerName).To(Equal(providerNameFromIssuer(issuer)))
-			Expect(providerName).To(MatchRegexp("^[0-9a-f]{64}$"))
+			Expect(providerName).To(MatchRegexp("^iss-[0-9a-f]{64}$"))
 		})
 
 		It("should derive the same provider name regardless of a trailing slash (AKS-shaped)", func() {
@@ -154,9 +154,9 @@ var _ = Describe("Resolver", func() {
 	})
 
 	Context("providerNameFromIssuer", func() {
-		It("should return a 64-character lowercase hex digest", func() {
+		It("should return an 'iss-' prefixed 64-character lowercase hex digest", func() {
 			name := providerNameFromIssuer("https://oidc.eks.eu-west-1.amazonaws.com/id/1234567890ABCDEF")
-			Expect(name).To(MatchRegexp("^[0-9a-f]{64}$"))
+			Expect(name).To(MatchRegexp("^iss-[0-9a-f]{64}$"))
 		})
 
 		It("should be deterministic", func() {

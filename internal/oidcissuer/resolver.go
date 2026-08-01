@@ -75,14 +75,16 @@ func (r *Resolver) Resolve() (providerName string, issuer string, err error) {
 	return providerNameFromIssuer(issuer), issuer, nil
 }
 
-// providerNameFromIssuer derives a deterministic, alphanumeric provider name from an
-// OIDC issuer URL by hex-encoding the SHA-256 digest of its canonicalized form. The
-// trailing slash is stripped first: some issuers (e.g. AKS) include one and some (e.g.
-// EKS) don't, and both forms identify the same trust anchor.
+// providerNameFromIssuer derives a deterministic, Artifactory-safe provider name from an
+// OIDC issuer URL by hex-encoding the SHA-256 digest of its canonicalized form, prefixed
+// with "iss-". Artifactory provider names must start with a lowercase letter and contain
+// only lowercase letters, digits and `-`; a bare hex digest can start with 0-9, which the
+// prefix rules out. The trailing slash is stripped first: some issuers (e.g. AKS) include
+// one and some (e.g. EKS) don't, and both forms identify the same trust anchor.
 func providerNameFromIssuer(issuer string) string {
 	canonical := strings.TrimSuffix(issuer, "/")
 	sum := sha256.Sum256([]byte(canonical))
-	return hex.EncodeToString(sum[:])
+	return "iss-" + hex.EncodeToString(sum[:])
 }
 
 // extractIssuerFromToken decodes a JWT token and extracts the `iss` claim
