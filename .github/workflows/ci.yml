@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   ci:
-    uses: richardmsong/shared-workflows/.github/workflows/ci.yml@main
+    uses: richardmsong/shared-workflows/.github/workflows/ci.yml@7e4d37d1bab79696038882e240642177f34379ca # ratchet:richardmsong/shared-workflows/.github/workflows/ci.yml@main
     with:
       push-image: ${{ github.event_name != 'pull_request' || inputs.push-image == true }}
     secrets: inherit

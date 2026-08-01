@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   release:
-    uses: richardmsong/shared-workflows/.github/workflows/tag-release.yml@main
+    uses: richardmsong/shared-workflows/.github/workflows/tag-release.yml@7e4d37d1bab79696038882e240642177f34379ca # ratchet:richardmsong/shared-workflows/.github/workflows/tag-release.yml@main
     with:
       version: ${{ inputs.version || '' }}
       dry-run: ${{ inputs.dry-run || false }}

@@ -11,5 +11,5 @@ permissions:
 
 jobs:
   create-pr:
-    uses: richardmsong/shared-workflows/.github/workflows/auto-pr.yml@main
+    uses: richardmsong/shared-workflows/.github/workflows/auto-pr.yml@7e4d37d1bab79696038882e240642177f34379ca # ratchet:richardmsong/shared-workflows/.github/workflows/auto-pr.yml@main
     secrets: inherit
