@@ -19,7 +19,7 @@ CONTAINER_TOOL ?= docker
 
 # Docker registry configuration
 REGISTRY ?= ghcr.io
-IMAGE_NAME ?= richardmsong/jfrog-token-exchanger
+IMAGE_NAME ?= rbc/jfrog-token-exchanger
 
 # DOCKER_TAGS can be set to override default tags (space-separated for multiple tags)
 # Example: make docker-buildx-ci DOCKER_TAGS="latest v1.0.0 sha-abc1234"
