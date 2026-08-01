@@ -42,10 +42,9 @@ The controller requires the following environment variables or configuration:
 |----------|----------|-------------|---------|
 | `JTE_JFROG_URL` | Yes | Base URL of your JFrog instance | `https://mycompany.jfrog.io` |
 | `JTE_JFROG_REGISTRY` | Yes | Registry hostname for docker config | `mycompany.jfrog.io` |
-| `JTE_PROVIDER_NAME` | Conditional* | OIDC provider name configured in JFrog | `my-k8s-cluster` |
-| `JTE_CLUSTER_NAME_RESOLUTION_MODE` | Conditional* | Auto-detect cluster name from environment. Supported modes: `azure` | `azure` |
+| `JTE_PROVIDER_NAME` | No | OIDC provider name configured in JFrog. If unset, the controller auto-detects a provider identity from the service account token's OIDC issuer (see below) | `my-k8s-cluster` |
 
-\* Either `JTE_PROVIDER_NAME` or `JTE_CLUSTER_NAME_RESOLUTION_MODE` must be set.
+#### OIDC Issuer-Based Resolution (works on any cloud)
 
 #### Token Audience
 
@@ -54,28 +53,27 @@ Exchanged ServiceAccount tokens carry `aud` == `JTE_JFROG_URL` (the full Artifac
 **Migration note for existing deployments:** previously, the `aud` claim came from the cluster's default audience, which varies by provider (e.g. AKS clusters get several default audiences, EKS clusters get exactly one: `https://kubernetes.default.svc`). If your JFrog OIDC Identity Provider's "Audience" field is currently configured to match one of those cluster defaults, you must update it to your Artifactory URL (the value of `JTE_JFROG_URL`) before upgrading, or token exchange will start failing.
 
 #### Azure Kubernetes Service (AKS) Support
+If `JTE_PROVIDER_NAME` is not set, the controller automatically derives a provider identity from the Kubernetes service account token's `iss` (issuer) claim, with no cloud-specific logic and no mode to configure. Every Kubernetes cluster with a configured service-account-token issuer stamps that issuer into every SA token — this is standard OIDC/Kubernetes behavior, not specific to any one provider. For example:
 
-When running in Azure Kubernetes Service (AKS), the controller can automatically detect your cluster name from the Kubernetes service account token, eliminating the need to manually configure the provider name.
+- AKS: `iss: https://<region>.oic.prod-aks.azure.com/<tenant-id>/<cluster-id>/`
+- EKS: `iss: https://oidc.eks.<region>.amazonaws.com/id/<cluster-id>`
 
 **How it works:**
-- Set `JTE_CLUSTER_NAME_RESOLUTION_MODE=azure`
 - The controller reads the service account token from `/var/run/secrets/kubernetes.io/serviceaccount/token`
-- Decodes the JWT token and extracts the cluster name from the audience claim
-- The audience claim format: `https://<cluster-name>-dns-<hash>.hcp.<region>.azmk8s.io`
-- Uses the extracted cluster name as the provider name for JFrog OIDC token exchange
+- Decodes the JWT and extracts the `iss` claim
+- The issuer is the actual trust anchor Artifactory validates the token's signature against, but Artifactory's OIDC provider name field must start with a lowercase letter and contain only lowercase letters, digits and `-` — an arbitrary issuer URL doesn't qualify, and neither does a bare hex digest (it can start with 0-9). So the controller hashes the issuer (SHA-256, hex-encoded) and prefixes it with `iss-` to get the provider name
+- On startup the controller logs both the raw issuer and the derived provider name; use those values verbatim when configuring the matching JFrog OIDC integration (`name` = the digest, `issuer_url` = the raw issuer)
 
-**Example AKS deployment:**
+**Example deployment (AKS or EKS) relying on auto-detection:**
 ```yaml
 env:
   - name: JTE_JFROG_URL
     value: "https://mycompany.jfrog.io"
   - name: JTE_JFROG_REGISTRY
     value: "mycompany.jfrog.io"
-  - name: JTE_CLUSTER_NAME_RESOLUTION_MODE
-    value: "azure"
 ```
 
-**Important:** The cluster name extracted will match your AKS cluster's resource name. **You must configure your JFrog Artifactory OIDC provider name to match your AKS cluster name exactly.** For example, if your AKS cluster is named `my-prod-cluster`, your JFrog OIDC provider must also be named `my-prod-cluster`.
+**Important:** The resolved provider name is a SHA-256 digest, not a friendly cluster name. **You must configure your JFrog Artifactory OIDC provider with a name matching the digest exactly, and an `issuer_url` matching the raw issuer exactly** (both are printed in the controller's startup logs). Use Artifactory's OIDC Identity Provider **Description** field to attach a human-readable cluster label.
 
 ### Running on the cluster
 
