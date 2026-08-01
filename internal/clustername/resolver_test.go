@@ -49,58 +49,7 @@ func createMockTokenWithIssuer(audiences interface{}, issuer string) string {
 }
 
 var _ = Describe("Resolver", func() {
-	Context("ResolveClusterName", func() {
-		It("should return error for unsupported mode", func() {
-			resolver := &Resolver{
-				getEnv: func(key string) string {
-					return ""
-				},
-				readFile: func(path string) ([]byte, error) {
-					return nil, fmt.Errorf("not called")
-				},
-			}
-			_, err := resolver.ResolveClusterName("unsupported")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("unsupported cluster name resolution mode"))
-		})
-
-		It("should return error for empty mode", func() {
-			resolver := &Resolver{
-				getEnv: func(key string) string {
-					return ""
-				},
-				readFile: func(path string) ([]byte, error) {
-					return nil, fmt.Errorf("not called")
-				},
-			}
-			_, err := resolver.ResolveClusterName("")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("unsupported cluster name resolution mode"))
-		})
-
-		It("should support oidc-issuer mode with token", func() {
-			token := createMockTokenWithIssuer([]interface{}{
-				"https://mycompany.jfrog.io",
-			}, "https://oidc.eks.us-east-1.amazonaws.com/id/ABCDEF1234567890")
-
-			resolver := &Resolver{
-				getEnv: func(key string) string {
-					return ""
-				},
-				readFile: func(path string) ([]byte, error) {
-					if path == ServiceAccountTokenPath {
-						return []byte(token), nil
-					}
-					return nil, fmt.Errorf("file not found")
-				},
-			}
-			name, err := resolver.ResolveClusterName(ResolutionModeOIDCIssuer)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(name).To(Equal("https://oidc.eks.us-east-1.amazonaws.com/id/ABCDEF1234567890"))
-		})
-	})
-
-	Context("resolveOIDCIssuer", func() {
+	Context("Resolve", func() {
 		It("should extract issuer from service account token (EKS-shaped)", func() {
 			token := createMockTokenWithIssuer(
 				[]interface{}{"https://kubernetes.default.svc"},
@@ -119,7 +68,7 @@ var _ = Describe("Resolver", func() {
 				},
 			}
 
-			issuer, err := resolver.resolveOIDCIssuer()
+			issuer, err := resolver.Resolve()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(issuer).To(Equal("https://oidc.eks.eu-west-1.amazonaws.com/id/1234567890ABCDEF"))
 		})
@@ -139,7 +88,7 @@ var _ = Describe("Resolver", func() {
 				},
 			}
 
-			issuer, err := resolver.resolveOIDCIssuer()
+			issuer, err := resolver.Resolve()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(issuer).To(Equal("https://eastus.oic.prod-aks.azure.com/tenant-id/cluster-id/"))
 		})
@@ -154,7 +103,7 @@ var _ = Describe("Resolver", func() {
 				},
 			}
 
-			_, err := resolver.resolveOIDCIssuer()
+			_, err := resolver.Resolve()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to read service account token"))
 		})
@@ -169,7 +118,7 @@ var _ = Describe("Resolver", func() {
 				},
 			}
 
-			_, err := resolver.resolveOIDCIssuer()
+			_, err := resolver.Resolve()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("service account token is empty"))
 		})
@@ -186,7 +135,7 @@ var _ = Describe("Resolver", func() {
 				},
 			}
 
-			_, err := resolver.resolveOIDCIssuer()
+			_, err := resolver.Resolve()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("iss claim is empty or missing"))
 		})

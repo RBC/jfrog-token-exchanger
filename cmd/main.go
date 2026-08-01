@@ -95,40 +95,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Resolve provider name: prefer explicit config, fall back to cluster name resolution
-	var providerName string
-	providerName = viper.GetString("PROVIDER_NAME")
-	clusterNameResolutionMode := viper.GetString("CLUSTER_NAME_RESOLUTION_MODE")
-
-	switch {
-	case providerName != "":
-		// Explicit PROVIDER_NAME is set - use it (takes precedence)
+	// Resolve provider name: prefer explicit config, fall back to auto-detection from the
+	// service account token's OIDC issuer
+	providerName := viper.GetString("PROVIDER_NAME")
+	if providerName != "" {
 		setupLog.Info("Using explicitly configured provider name", "providerName", providerName)
-		if clusterNameResolutionMode != "" {
-			setupLog.Info("CLUSTER_NAME_RESOLUTION_MODE is set but PROVIDER_NAME takes precedence",
-				"ignoredMode", clusterNameResolutionMode)
-		}
-	case clusterNameResolutionMode != "":
-		// No explicit PROVIDER_NAME - auto-detect cluster name
-		setupLog.Info("Cluster name resolution mode enabled", "mode", clusterNameResolutionMode)
-
+	} else {
 		resolver := clustername.NewResolver()
-		detectedName, err := resolver.ResolveClusterName(clusterNameResolutionMode)
+		detectedName, err := resolver.Resolve()
 		if err != nil {
-			setupLog.Error(err, "Failed to resolve cluster name",
-				"mode", clusterNameResolutionMode)
+			setupLog.Error(err, "Failed to auto-detect provider name from service account token")
 			os.Exit(1)
 		}
 
 		providerName = detectedName
-		setupLog.Info("Cluster name auto-detected",
-			"clusterName", providerName,
-			"mode", clusterNameResolutionMode)
-	default:
-		// Neither PROVIDER_NAME nor CLUSTER_NAME_RESOLUTION_MODE is set
-		setupLog.Error(fmt.Errorf("missing required configuration"),
-			"Either PROVIDER_NAME or CLUSTER_NAME_RESOLUTION_MODE configuration is required")
-		os.Exit(1)
+		setupLog.Info("Provider name auto-detected", "providerName", providerName)
 	}
 
 	setupLog.Info("JFrog configuration loaded",

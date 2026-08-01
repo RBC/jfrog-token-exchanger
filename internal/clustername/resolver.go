@@ -25,16 +25,11 @@ import (
 )
 
 const (
-	// ResolutionModeOIDCIssuer resolves an opaque, provider-agnostic identity from the
-	// `iss` claim of the Kubernetes service account token. Every Kubernetes cluster with
-	// a configured service-account-token issuer stamps that issuer into every SA token,
-	// so this works the same way on any OIDC-compliant cluster.
-	ResolutionModeOIDCIssuer = "oidc-issuer"
 	// ServiceAccountTokenPath is the default path to the Kubernetes service account token
 	ServiceAccountTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token" //nolint:gosec // G101: This is a file path, not a credential
 )
 
-// Resolver provides methods for resolving cluster names from the environment
+// Resolver resolves a provider identity from the environment
 type Resolver struct {
 	// getEnv is a function to retrieve environment variables (allows testing)
 	getEnv func(string) string
@@ -42,7 +37,7 @@ type Resolver struct {
 	readFile func(string) ([]byte, error)
 }
 
-// NewResolver creates a new cluster name resolver
+// NewResolver creates a new resolver
 func NewResolver() *Resolver {
 	return &Resolver{
 		getEnv:   os.Getenv,
@@ -50,22 +45,13 @@ func NewResolver() *Resolver {
 	}
 }
 
-// ResolveClusterName resolves the cluster name based on the resolution mode
-// Supported modes: "oidc-issuer"
-func (r *Resolver) ResolveClusterName(mode string) (string, error) {
-	switch mode {
-	case ResolutionModeOIDCIssuer:
-		return r.resolveOIDCIssuer()
-	default:
-		return "", fmt.Errorf("unsupported cluster name resolution mode: %s (supported modes: oidc-issuer)", mode)
-	}
-}
-
-// resolveOIDCIssuer extracts the OIDC issuer (`iss` claim) from the Kubernetes service
-// account token. The issuer URL is used verbatim as the opaque provider identity, since
-// it is the actual trust anchor Artifactory validates the token's signature against in
-// OIDC federation. This performs no cloud-specific parsing.
-func (r *Resolver) resolveOIDCIssuer() (string, error) {
+// Resolve extracts the OIDC issuer (`iss` claim) from the Kubernetes service account
+// token and returns it verbatim as the opaque provider identity. Every Kubernetes cluster
+// with a configured service-account-token issuer stamps that issuer into every SA token,
+// so this works the same way on any OIDC-compliant cluster (AKS, EKS, etc.) with no
+// cloud-specific parsing. The issuer is also the actual trust anchor Artifactory validates
+// the token's signature against in OIDC federation.
+func (r *Resolver) Resolve() (string, error) {
 	tokenBytes, err := r.readFile(ServiceAccountTokenPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read service account token from %s: %w", ServiceAccountTokenPath, err)
